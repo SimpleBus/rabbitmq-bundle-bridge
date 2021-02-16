@@ -5,6 +5,7 @@ namespace SimpleBus\RabbitMQBundleBridge\Tests\Functional;
 use Asynchronicity\PHPUnit\Eventually;
 use SimpleBus\Asynchronous\Properties\DelegatingAdditionalPropertiesResolver;
 use SimpleBus\Message\Bus\MessageBus;
+use stdClass;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Process\Process;
 
@@ -14,28 +15,27 @@ use Symfony\Component\Process\Process;
  */
 class SimpleBusRabbitMQBundleTest extends KernelTestCase
 {
-    /**
-     * @var FileLogger
-     */
-    private $logger;
+    private FileLogger $logger;
 
     /**
-     * @var Process
+     * @var null|Process<\Generator>
      */
-    private $process;
+    private ?Process $process = null;
 
     /**
      * Timeout for asynchronous tests.
-     *
-     * @var int
      */
-    private $timeoutMs = 10000;
+    private int $timeoutMs = 10000;
 
     protected function setUp(): void
     {
         static::bootKernel();
 
-        $this->logger = static::$kernel->getContainer()->get('logger');
+        $logger = static::$kernel->getContainer()->get('logger');
+
+        $this->assertInstanceof(FileLogger::class, $logger);
+
+        $this->logger = $logger;
         $this->logger->clearFile();
 
         $process = new Process(
@@ -50,7 +50,6 @@ class SimpleBusRabbitMQBundleTest extends KernelTestCase
         parent::tearDown();
 
         static::$class = null;
-        static::$kernel = null;
 
         if ($this->process instanceof Process) {
             $this->process->stop(2, SIGKILL);
@@ -60,7 +59,7 @@ class SimpleBusRabbitMQBundleTest extends KernelTestCase
     /**
      * @test
      */
-    public function itIsAbleToLoadTheBundle()
+    public function itIsAbleToLoadTheBundle(): void
     {
         /*
          * There's no need to do anything here. This alone will prove that the bundle behaves well,
@@ -74,7 +73,7 @@ class SimpleBusRabbitMQBundleTest extends KernelTestCase
      * @test
      * @group functional
      */
-    public function itHandlesCommandsAsynchronously()
+    public function itHandlesCommandsAsynchronously(): void
     {
         $this->consumeMessagesFromQueue('asynchronous_commands');
 
@@ -89,7 +88,7 @@ class SimpleBusRabbitMQBundleTest extends KernelTestCase
      * @test
      * @group functional
      */
-    public function itHandlesEventsAsynchronously()
+    public function itHandlesEventsAsynchronously(): void
     {
         $this->consumeMessagesFromQueue('asynchronous_events');
 
@@ -102,7 +101,7 @@ class SimpleBusRabbitMQBundleTest extends KernelTestCase
      * @test
      * @group functional
      */
-    public function itLogsErrors()
+    public function itLogsErrors(): void
     {
         $this->consumeMessagesFromQueue('asynchronous_commands');
 
@@ -115,7 +114,7 @@ class SimpleBusRabbitMQBundleTest extends KernelTestCase
      * @test
      * @group functional
      */
-    public function itResolveProperties()
+    public function itResolveProperties(): void
     {
         $data = $this->additionalPropertiesResolver()->resolveAdditionalPropertiesFor($this->messageDummy());
 
@@ -126,26 +125,27 @@ class SimpleBusRabbitMQBundleTest extends KernelTestCase
      * @test
      * @group functional
      */
-    public function itSendsPropertiesToProducer()
+    public function itSendsPropertiesToProducer(): void
     {
         $container = static::$kernel->getContainer();
         $container->set('old_sound_rabbit_mq.asynchronous_commands_producer', $container->get('simple_bus.rabbit_mq_bundle_bridge.delegating_additional_properties_resolver.producer_mock'));
 
         $this->commandBus()->handle(new AsynchronousCommand());
 
-        $data = $container->get('simple_bus.rabbit_mq_bundle_bridge.delegating_additional_properties_resolver.producer_mock')->getAdditionalProperties();
+        $producer = $container->get('simple_bus.rabbit_mq_bundle_bridge.delegating_additional_properties_resolver.producer_mock');
+
+        $this->assertInstanceOf(AdditionalPropertiesResolverProducerMock::class, $producer);
+
+        $data = $producer->getAdditionalProperties();
         $this->assertSame(['debug' => 'string'], $data);
     }
 
-    protected static function getKernelClass()
+    protected static function getKernelClass(): string
     {
-        return 'SimpleBus\RabbitMQBundleBridge\Tests\Functional\TestKernel';
+        return TestKernel::class;
     }
 
-    /**
-     * @param $message
-     */
-    private function waitUntilLogFileContains($message)
+    private function waitUntilLogFileContains(string $message): void
     {
         self::assertThat(
             function () use ($message) {
@@ -156,44 +156,39 @@ class SimpleBusRabbitMQBundleTest extends KernelTestCase
         );
     }
 
-    /**
-     * @return MessageBus
-     */
-    private function commandBus()
+    private function commandBus(): MessageBus
     {
-        return static::$kernel->getContainer()->get('command_bus');
+        $commandBus = static::$kernel->getContainer()->get('command_bus');
+
+        $this->assertInstanceOf(MessageBus::class, $commandBus);
+
+        return $commandBus;
     }
 
-    /**
-     * @return MessageBus
-     */
-    private function eventBus()
+    private function eventBus(): MessageBus
     {
-        return static::$kernel->getContainer()->get('event_bus');
+        $eventBus = static::$kernel->getContainer()->get('event_bus');
+
+        $this->assertInstanceOf(MessageBus::class, $eventBus);
+
+        return $eventBus;
     }
 
-    /**
-     * @return DelegatingAdditionalPropertiesResolver
-     */
-    private function additionalPropertiesResolver()
+    private function additionalPropertiesResolver(): DelegatingAdditionalPropertiesResolver
     {
-        return static::$kernel->getContainer()->get('simple_bus.rabbit_mq_bundle_bridge.delegating_additional_properties_resolver.public');
+        $resolver = static::$kernel->getContainer()->get('simple_bus.rabbit_mq_bundle_bridge.delegating_additional_properties_resolver.public');
+
+        $this->assertInstanceOf(DelegatingAdditionalPropertiesResolver::class, $resolver);
+
+        return $resolver;
     }
 
-    /**
-     * @return \stdClass()
-     */
-    private function messageDummy()
+    private function messageDummy(): stdClass
     {
-        return new \stdClass();
+        return new stdClass();
     }
 
-    /**
-     * @param $queue
-     *
-     * @return Process
-     */
-    private function consumeMessagesFromQueue($queue)
+    private function consumeMessagesFromQueue(string $queue): void
     {
         $this->process = new Process(
             ['php', 'console.php', 'rabbitmq:consumer', $queue],
